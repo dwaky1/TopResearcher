@@ -1,0 +1,498 @@
+---
+title: "W.T.Researcher"
+author: "David Wakyiku"
+date: "June 1, 2015"
+fontsize: 12pt
+output: html_document
+runtime: shiny
+---
+
+Can you determine which address to best send the recruiters to and plot a map of your solution?
+
+This is what we could extract from the independent sources*:
+
+1.	The candidate is likely to be close to the Thames. The probability at any point is given by a Gaussian function of its shortest distance to the river. The function peaks at zero and has 95% of its total integral within +/- 2730m. The river coordinates are given by:
+```{r,echo=FALSE}
+riverthames<-matrix(c(51.489467,-0.236313,
+            51.468045,-0.216379,
+            51.464141,-0.190458,
+            51.473257,-0.179515,
+            51.480661,-0.173850,
+            51.484590,-0.148573,
+            51.483601,-0.137501,
+            51.485793,-0.129604,
+            51.494744,-0.122824,
+            51.508208,-0.118489,
+            51.509330,-0.096431,
+            51.501904,-0.058365,
+            51.508662,-0.043216,
+            51.506098,-0.030727,
+            51.490202,-0.028796,
+            51.485098,-0.007725,
+            51.490683,0.000215,
+            51.502305,-0.005407,
+            51.506552,0.005536),ncol=2,byrow=TRUE)
+```
+
+2.	We have some probability distribution centred at the Bank of England. The radial profile of which is log-normal with a mean of 4744m and a mode of 3777m in every direction.
+    ```{r,echo=TRUE}
+      #Bank of England geo-Coordinates
+      boe<-c(51.514171,-0.088438)
+
+    ```
+
+3.	A satellite offers further information: With 95% probability she is located within 3160m distance of the satellite path (assuming a normal probability distribution).
+
+    ```{r,echo=TRUE}
+      #satellite path geo-Coordinates
+      ststart = c(51.451,-0.3)
+      stend = c(51.56,0.00)
+    ```
+ 
+
+<!-- To learn more, see [Interactive Documents](http://rmarkdown.rstudio.com/authoring_shiny.html).-->
+### Introduction
+
+We present the solution in an ${\tt R}$-markup interactive page that helps us track the presentation, computation and visualization at one go. ${\tt R}$ output is marked by double-hashes.
+
+This page's code and that of all the background ${\tt R}$ functions can be accessed on [github.com](https://github.com/dwaky1/TopResearcher).
+
+### Conversion to Cartesian Coordinate System
+
+Search Region is small enough to justify an approximate XY Cartesian coordinate system construction:
+
+ a. X-axis is in West-East direction, and Y-axis corresponds to South-North,
+ 
+ 
+ b. We choose a convenient Cartesian origin (0,0); $$\small (O_{lat},O_{lon})= (51.481,-0.15),$$
+ 
+    ```{r,echo=FALSE}
+      geoOrigin = c(51.481,-0.15)
+    ```
+      
+ c. For each point $\small (P_{lat}, P_{lon})$, the Cartesian  transformation is given by
+ 
+   $$\begin{align*}
+   \small P_x &= \small R \, (P_{lon} - O_{lon}) \,\,   \cos(O_{lat})  \frac{\pi}{180},\\
+   \small P_y &= \small R \, (P_{lat} - O_{lat}) \,  \frac{\pi}{180},
+   \end{align*}$$
+      where R = 6371km.	
+```{r,echo=FALSE}
+GeotoXY <- function(geom){
+  #Function that converts GPS coordinates into rectangular Cartesian system
+  #geom
+  Olat = geoOrigin[1]
+  Olon = geoOrigin[2]
+  cst = 6371*pi/180
+  x= (geom[2]- Olon)*cos(Olat*pi/180)*cst
+  y=(geom[1]-Olat)*cst
+  return(c(x,y))
+}
+
+```
+```{r,echo=FALSE}
+XYtoGeo<-function(xycoords){
+  #Convert back xy-coordinates to geometric coordinates
+  Olat = geoOrigin[1]
+  Olon = geoOrigin[2]
+  cst = 6371*pi/180
+  lat = Olat + (xycoords[2]/cst)
+  lon =Olon + xycoords[1]/(cst*cos(Olat*pi/180))
+  return(c(lat,lon))
+}
+
+```
+
+
+&nbsp;
+
+It is important to note that XY-coordinates will depend on choice of origin. However, distances (which we are particularly interested in) are invariant under appropriate choice of origin.
+	
+<!-- ### Solution Approach 
+ summary 
+We use a frequentist approach. XY plane with equidistant points, and regions ....
+-->
+### Measurements and Approximations
+We have coded three distance functions.
+
+  1. Measuring distance between any two points
+    ```{r,echo=FALSE}
+       distcartesian <- function(a,b){
+    k =(a[1]-b[1])^2+(a[2]-b[2])^2
+  return(sqrt(k))
+  }
+  ```
+    This is the cartesian distance between two points A and B in XY-plane.
+  
+  2. Distance between a point and line-segment
+  ```{r,echo=FALSE}
+  disttosection <- function(p,a,b){
+ #compute distance to linear section of piece-wise linear path
+  dist=0
+  len=distcartesian(a,b)
+  if (len==0){
+    dist=distcartesian(p,a)
+  }
+  projection=((p[1]-a[1])*(b[1]-a[1])+(p[2]-a[2])*(b[2]-a[2]))/len^2
+  if (projection<0){
+    dist=distcartesian(p,a)
+  }
+  else
+    if (projection>1){
+      dist=distcartesian(p,b)
+    }
+  else dist=distcartesian(p,c(a[1]+projection*(b[1]-a[1]),a[2]+projection*(b[2]-a[2])))
+  return(dist)
+  }
+
+```
+    We consider the three cases:
+    
+    ```{r, echo=FALSE, fig.width=6, fig.height=2}
+    library(png)
+    library(grid)
+    img <- readPNG("C:/Documents and Settings/User/My Documents/figures/projections.png")
+    grid.raster(img)
+    ```
+    
+    $\small AB$ is line segment and $\small P$ the point. Projection, $p_{AB}$ herebelow refers to that of $\small AP$ on $\small AB$, and $l_{AB}$ is length of segment $\small AB$. 
+        
+    i. $\displaystyle \cos(PAB) < 0$  : distance to segment is distance to point A.
+    
+    ii. $\displaystyle \frac{|p_{AB}|}{l_{AB}} > 1$ : distance to segment is distance to point B.
+    
+    iii. $\displaystyle 0 <  |p_{AB}| < l_{AB}$  : distance is given by the crossproduct $|AP \times AB\|$.
+    
+<!-- Insert picture here. Insert R-shiny app -->
+  3. Distance between a point and path
+```{r,echo=FALSE}
+  disttopath <- function(p,path){
+  #path is made of several sections
+
+  distance=disttosection(p,path[1,],path[2,])
+  
+  #search for minimum distance section
+  for (i in 2:(nrow(path)-1)){
+    if (distance > disttosection(p,path[i,],path[i+1,])){
+      distance=disttosection(p,path[i,],path[i+1,])
+    }
+  }
+  return(distance)
+}
+```
+    Given distance function, $\small f$,  in (2) above and a path $\{p_i: i=1,\cdots,n\}$, then distance from point $\small Q$ to path is given by $$ \min_{i=1,\cdots\,n} \Big \{ f(Q,p_i) \Big\}$$
+
+
+&nbsp;
+
+Given a piece-wise linear path, we are able to calculate the shortest distance of any point to it. However, one of the independent sources involves a path along a great circle. The interactive map (not optimised for speed: each interaction is a recalculation) below demonstrates that a linear approximation isn't far off. The red line is the great circle along which satellite passes. A straight line (yellow) connecting beginning and end gives a good approximation for n = 2. In fact, using more points to approximate satellite path increases complexity (path becomes piecewise linear) without necessarily improving on accuracy.
+
+```{r,echo=FALSE}
+
+linear_geocoords <- function(geostart,geoend,npoints)
+{
+#Function to return geo-coordinates of linear path
+	#geostart - start of path geo-coordinates
+	#geoend - end of path geo-coordinates
+	#npoints - number of points in path. has to be > 1
+	
+	sat1<-GeotoXY(geostart)
+	sat2<-GeotoXY(geoend)
+	
+	lambda <- c(0,1)
+	if(npoints>2) lambda <- c(0, c(1:(npoints-2))/(npoints-1),1)
+	
+	x_pathpoints <- sat1[1]*(1-lambda) + sat2[1]*lambda
+	y_pathpoints <- sat1[2]*(1-lambda) + sat2[2]*lambda
+	
+	pathmatrix <- matrix(cbind(x_pathpoints,y_pathpoints),ncol=2)
+	
+	geopathmatrix <- t(apply(pathmatrix,1,XYtoGeo))
+	geopath <- as.data.frame(geopathmatrix)
+	colnames(geopath)<-c('lat','lon')
+	return(geopath)
+}
+
+```
+
+The linear approximation of great circles in small areas is well known. We proceeded with this anyway as a way of verifying functionality of background functions.
+
+```{r, echo=FALSE}
+
+inputPanel(
+  #selectInput("npoints", label = "Number of points on great-circle approximating line",
+              #choices = c(10, 20, 35, 50), selected = ),
+  
+  sliderInput("npoints", label = "Great-circle linear approx no. of points", min = 2, max = 5, value = 3, step = 1),
+  
+  
+ 
+  checkboxGroupInput("satpath", label = "Satellite Path", choices = list("Great Circle" = 1, "Linear Approx." = 2),
+        selected = 1))
+
+  
+ 
+  
+renderPlot({
+  library(RgoogleMaps)
+  library(ggmap)
+  library(geosphere)
+  #linear approximation of path
+  pts = linear_geocoords(ststart,stend,as.numeric(input$npoints))
+  zoom1 = min(MaxZoom(pts[,1],pts[,2]))
+  
+  #geodisc
+  inter2 <- gcIntermediate(ststart, stend, n=20, addStartEnd=TRUE)
+  colnames(inter2)<-c('lat','lon')
+  
+  london <- get_map(location=c(geoOrigin[2],geoOrigin[1]),zoom=11,maptype = "roadmap")
+  
+  if(length(input$satpath)==1){
+    if(input$satpath==1) ggp <- ggmap(london) + geom_line(data = as.data.frame(inter2), aes(x=lon,y=lat), color = "red",size=1)
+    if(input$satpath==2) ggp <- ggmap(london) + geom_line(data=pts, aes(x=lon, y=lat),color="yellow",size= 2)
+  }
+  if(length(input$satpath)>1)ggp <- ggmap(london) +geom_line(data=pts, aes(x=lon, y=lat),color="yellow",size= 2) + geom_line(data = as.data.frame(inter2), aes(x=lon,y=lat), color = "red",size=1)
+  
+  
+  if(is.null(input$satpath)) return()
+  
+  plot(ggp)
+
+})
+```
+
+
+
+### Identifying Points in 95% Confidence Interval Search Areas
+
+At this point we have the approximations to all paths obtained from independent sources, and have determined how to calculate the shortest distance from any point to these paths. Next, We divide the search area into an XY-grid and walk through it to determine the points that lie in the 95% confidence intervals corresponding to the 3 independent sources:
+
+  i. For each point in the XY-grid, we determine whether it is in the Bank of England, Satellite Path and River Thames 95% search confidence intervals.
+  
+  ii. This brute-force approach is computationally intensive. We know that the top researcher will be at the intersection of the three 95% confidence-interval regions because of the independence of the sources, and as such can right away eliminate points that lie outside any confidence interval, which would be a first step improvement. However, we shall pay the computational penalty for visual clarity, and compute the confidence intervals independently.
+  
+  iii. **River Thames**: The probability at any point is given by a Gaussian function of its shortest distance to the river.     The function peaks at zero and has 95% of its total integral within +/- 2.73km. We know that for a Gaussian distribution, 95% is within 1.96 standard deviations, thus the standard deviation is  
+  
+    ```{r,echo=TRUE}
+        #s.d for Thames Gaussian Distribution
+        sd_rth <- 2.73/1.96
+    ```
+    which gives
+    ```{r,echo=FALSE}
+      #s.d for Thames Gaussian Distribution
+      print(sd_rth)
+
+    ```
+Therefore, establishing whether a grid point (talented researcher) lies within 95% confidence interval of the thames is straightforward. A point lies within the 95% confidence interval if 
+```
+  Distance(point, Thames)  < 97.5th percentile of Normal distribution with mean = 0 and sd = 1.392857
+```
+
+  iv. **Satellite Path**: With 95% probability she is located within 3.16km distance of the satellite path (assuming a normal probability distribution). Similar procedure to calculating standard deviation.
+  
+    ```{r,echo=TRUE}
+       #s.d for Satellite-Path Gaussian Distribution
+       sd_stlt <- 3.16/1.96
+  
+    ```
+    which gives
+    ```{r,echo=FALSE}
+      print(sd_stlt)
+
+    ```
+
+      A point lies within the 95% confidence interval if 
+    ```
+      Distance(point, Satellite-Path)  < 97.5th percentile of Normal distribution with mean = 0 & sd = 1.61224
+    ```
+  
+  v. **Bank Of England**: Log-normal distribution with a mean of 4744m and a mode of 3777m in every direction. In-order to calculate percentiles, we need to know the mean and standard deviation of the corresponding normal distribution. 
+    The mean $(\mu_{LN})$ and mode $(\nu_{LN})$ of a log-normal distribution are given by
+    $$\small \mu_{LN} = e^{\mu + \sigma^2/2} \text{  and  } \nu_{LN}   = e^{\mu - \sigma^2},$$
+    
+    where $(\mu,\sigma)$ are the mean and standard deviation of the corresponding normal distribution. Thus,
+    $$\small \mu = \frac{2 \log(\mu_{LN}) + \log(\nu_{LN})}{3} \text{  and  } \sigma = \sqrt{\frac{2}{3} \Big(\log(\mu_{LN})- \log( \nu_{LN} )\Big)}.$$
+    
+    ```{r,echo=FALSE}
+    boeXY<- GeotoXY(boe)
+    boeMean=4.744
+    boeMode=3.777
+    boeSigma=sqrt((2/3)*(log(boeMean)-log(boeMode)))
+    boeMu=(2*log(boeMean)+log(boeMode))/3
+    ```
+  
+  vi. **Grid Size**: Analysing several path statistics helps us obtain an XY-grid that contains all the paths and 95% confidence intervals. The following River-Thames descriptive statistics are obtained after XY-transformation:
+    ```{r,echo=TRUE}
+       #River Thames: Transform geo-Coordinates to XY
+        riverthamesXY <- t(apply(riverthames,1,GeotoXY))
+    
+       #summary statistics
+        summaryXY <- summary(riverthamesXY)
+        colnames(summaryXY) <- c("X","Y")
+        summaryXY
+    
+    ```
+       Similarly the XY-transformed satellite path starts at
+    ```{r,echo=FALSE}
+        XYststart<-GeotoXY(ststart)
+        XYstend <-GeotoXY(stend)
+        XYststart
+      
+    ```
+      and ends at
+    ```{r,echo=FALSE}
+        XYstend
+    ```
+      while the 97.5th percentile of the Bank of England log-normal distribution obtained from
+    ```{r,echo=TRUE}
+        boeUpperCIBound <- qlnorm(0.975,boeMu,boeSigma)
+    ```
+      to give
+    ```{r,echo=FALSE}
+        boeUpperCIBound
+    ```       
+     with the bank at
+    ```{r,echo=FALSE}
+        boeXY
+    ```
+     
+     Clearly, a 20 x 20 sq.km grid is appropriate. We use steps of 100m both in X and Y directions. The 95% confidence intervals regions obtained using the rules above are shown on the map below.
+
+    ```{r,echo=FALSE}
+    #River Thames likely points
+  level <- 0.975
+  step1 <- 0.1
+  rthamespts<-matrix(ncol=2)
+  Xaxis=seq(-4,16,step1)
+  Yaxis=seq(-4,16,step1)
+  for (i in Xaxis){
+    for (j in Yaxis){
+     if (disttopath(c(i,j),riverthamesXY)<qnorm(level,0,sd_rth )){
+       rthamespts=rbind(rthamespts,c(i,j))
+     } 
+    }
+  }
+  rthamespts<-rthamespts[-1,]
+  rthamespts=t(apply(rthamespts,1,XYtoGeo))
+  
+  
+  #Bank of England likely points
+  boepts<-matrix(ncol=2)
+  boepts[1,]<-boeXY #Bank Of England Coordinates
+  #Avoid overlapping shift
+  Xaxis=seq(-5.95,16,step1)
+  Yaxis=seq(-5.95,16,step1)
+  for (i in Xaxis){
+    for (j in Yaxis){
+      if (distcartesian(c(i,j),boeXY)<qlnorm(level,boeMu,boeSigma)){
+        boepts=rbind(boepts,c(i,j))
+      } 
+    }
+  }
+  boepts=t(apply(boepts,1,XYtoGeo))
+  
+  #Satellite Path likely points
+  satpts<-matrix(ncol=2)
+  Xaxis=seq(-5.97,16,step1)
+  Yaxis=seq(-5.97,16,step1)
+  for (i in Xaxis){
+    for (j in Yaxis){
+      
+      if (disttosection(c(i,j),XYststart, XYstend) < qnorm(level,0,sd_stlt)){
+        satpts=rbind(satpts,c(i,j))
+      } 
+    }
+  }
+  satpts<-satpts[-1,]
+  satpts=t(apply(satpts,1,XYtoGeo))
+  
+  
+  suppressMessages(library(RgoogleMaps))
+  center = c( geoOrigin[1]+8/111.323,geoOrigin[2]+8/111.323);
+  zoom <- min(MaxZoom(c(geoOrigin[1],geoOrigin[1]+16/111.323),c(geoOrigin[2],geoOrigin[2]+16/111.323)));
+  LondonMap <- GetMap(center=geoOrigin, zoom=11, destfile = "London1.png");
+  tmp <-PlotOnStaticMap(LondonMap, lat = rthamespts[,1], lon = rthamespts[,2],destfile = "London1.png", col="blue",cex=.1, pch=20, add=FALSE);
+  PlotOnStaticMap(LondonMap, lat = boepts[,1], lon = boepts[,2],  FUN = points, col="red", cex=.1,pch=20, add=TRUE)
+  PlotOnStaticMap(LondonMap, lat = satpts[,1], lon = satpts[,2], FUN = points, col="black", cex=.1,pch=20, add=TRUE)
+    ```
+
+
+
+    &nbsp;
+
+    The intersection of the confidence-intervals is too big to be helpful. However, we know that the top researcher is most likely to be closest to any of the sources. If for example Bank of England was the only source then the researcher would most likely be at the bank. This motivates a confidence-interval reduction approach:
+        
+      i.  We repeat the search above but at a lower confidence interval,
+          
+      ii. Continue with i above as long as there are grid points in the region of intersection,
+          
+      iii. If we can't proceed with ii (no more grid points), then the point(s) in the region of intersection correspond to the most likely location of the researcher. 
+      
+    
+     &nbsp;
+    
+      This iterative process of reducing the confidence-interval until a point beyond which there are no grid points in the intersection region yields the xy-pair:
+    
+    ```{r,echo=FALSE}
+  size = 5
+  level=.975
+  while(size>4){
+  intersectpts<-matrix(ncol=2)
+  Xaxis=seq(-2,7,.2)
+  Yaxis=seq(-2,7,.2)
+  for (i in Xaxis){
+    for (j in Yaxis){
+      if (distcartesian(c(i,j),boeXY) < qlnorm(level,boeMu,boeSigma) &&
+            disttosection(c(i,j),XYststart,XYstend)< qnorm(level,0,sd_stlt) &&
+            disttopath(c(i,j),riverthamesXY)< qnorm(level,0,sd_rth)) {
+        intersectpts=rbind(intersectpts,c(i,j))
+      } 
+    }
+  }
+  
+  
+  intersectpts=intersectpts[-1,]
+  size=nrow(intersectpts)
+  #print(c(level,size))
+  level=level-.01
+  }
+
+  intersectpts[1,]
+  
+    ```
+      However, we used a grid with step of 100m. Next, we zero in on this point and build a grid around it with steps of 10m, and repeat the confidence interval reduction process illustrated above. This time we search until at least 4 points remain in the intersection region.
+       
+    ```{r,echo=FALSE}
+  size = 9
+  level= .611
+  while(size > 8){
+  intersectpts<-matrix(ncol=2)
+  Xaxis=seq(1.5,5,.01)
+  Yaxis=seq(3,5,.01)
+  for (i in Xaxis){
+    for (j in Yaxis){
+      if (distcartesian(c(i,j),boeXY) < qlnorm(level,boeMu,boeSigma)  &&
+            disttosection(c(i,j),XYststart,XYstend) < qnorm(level,0,sd_stlt) &&
+            disttopath(c(i,j),riverthamesXY) < qnorm(level,0,sd_rth)) {
+            intersectpts = rbind(intersectpts,c(i,j))
+      } 
+    }
+  }
+  intersectpts=intersectpts[-1,]
+  size=nrow(intersectpts)
+  #print(c(level,size))
+  level=level-.0001
+  }
+```
+    The blue points show the region where the top researcher is most likely to be.
+    ```{r,echo=FALSE}
+    
+    geointersect<-t(apply(intersectpts,1,XYtoGeo))
+    geointersect[1,]
+    center = geointersect[1,];
+    zoom <- min(MaxZoom(c(geoOrigin[1],geoOrigin[1]+.5/111.323),c(geoOrigin[2],geoOrigin[2]+.5/111.323)));
+    MyMap <- GetMap(center=center, zoom=zoom, destfile = "map1.png");
+    PlotOnStaticMap(MyMap, lat = geointersect[,1], lon = geointersect[,2],
+                       destfile = "map1.png", col="blue",cex=.5, pch=20, add=FALSE)
+    ```
+    The top researcher is most likely wandering on Tavistock St, probably walking towards the London Stock Exchange which is 20 mins away. 
