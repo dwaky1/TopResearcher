@@ -149,10 +149,10 @@ We have coded three distance functions.
     We consider the three cases:
     
     ```{r, echo=FALSE, fig.width=6, fig.height=2}
-    library(png)
-    library(grid)
-    img <- readPNG("C:/Documents and Settings/User/My Documents/figures/projections.png")
-    grid.raster(img)
+    #library(png)
+    #library(grid)
+    #img <- readPNG("C:/Documents and Settings/User/My Documents/figures/projections.png")
+    #grid.raster(img)
     ```
     
     $\small AB$ is line segment and $\small P$ the point. Projection, $p_{AB}$ herebelow refers to that of $\small AP$ on $\small AB$, and $l_{AB}$ is length of segment $\small AB$. 
