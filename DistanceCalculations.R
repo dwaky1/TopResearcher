@@ -1,3 +1,6 @@
+##Group of functions to compute distances between points, sections and paths.
+##D.W  May 2015
+
 
 distcartesian <- function(a,b){
  #Distance between two points in the XY plane
